@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia'
-import { db, plain } from '../utils/db'
+import { db, plain, availableDeveloperRolls, reservedRolls } from '../utils/db'
 import type { Developer } from '../types/developer'
-import { remainingRolls } from '../utils/ratio'
+import { notifyDbChange } from '../utils/dbSync'
 
-type NewDeveloper = Omit<Developer, 'id' | 'schemaRev'>
+type NewDeveloper = Omit<Developer, 'id' | 'schemaRev' | 'reservations' | 'version'>
 
 export const useDeveloperStore = defineStore('developer', {
   state: () => ({
@@ -12,12 +12,11 @@ export const useDeveloperStore = defineStore('developer', {
   }),
   getters: {
     activeDevelopers: (state) => state.developers.filter((developer) => developer.state !== '报废'),
+    /** 可冲卷数合计 = 上限 − 已冲 − 待确认计划占用 */
     availableRolls(): number {
-      return this.activeDevelopers.reduce(
-        (sum, developer) => sum + remainingRolls(developer.maxRolls, developer.usedRolls),
-        0
-      )
-    }
+      return this.activeDevelopers.reduce((sum, developer) => sum + availableDeveloperRolls(developer), 0)
+    },
+    reservedRolls: (state) => state.developers.reduce((sum, developer) => sum + reservedRolls(developer.reservations), 0)
   },
   actions: {
     async load(): Promise<void> {
@@ -29,21 +28,20 @@ export const useDeveloperStore = defineStore('developer', {
       }
     },
     async addDeveloper(payload: NewDeveloper): Promise<number> {
-      const next = { ...payload, schemaRev: 2 }
+      const next = { ...payload, reservations: [], version: 0, schemaRev: 3 }
       const id = await db.developers.add(plain(next))
       await this.load()
+      notifyDbChange('developer')
       return id
     },
-    async incrementUsed(id: number): Promise<void> {
+    async scrap(id: number): Promise<void> {
       const developer = await db.developers.get(id)
       if (!developer) return
-      const usedRolls = developer.usedRolls + 1
-      await db.developers.update(id, plain({ usedRolls }))
+      developer.state = '报废'
+      developer.version = (developer.version ?? 0) + 1
+      await db.developers.put(plain(developer))
       await this.load()
-    },
-    async scrap(id: number): Promise<void> {
-      await db.developers.update(id, plain({ state: '报废' }))
-      await this.load()
+      notifyDbChange('developer')
     }
   }
 })

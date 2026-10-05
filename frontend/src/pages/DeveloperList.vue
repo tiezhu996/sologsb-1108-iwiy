@@ -4,8 +4,12 @@ import { ElMessage } from 'element-plus'
 import DilutionInput from '../components/common/DilutionInput.vue'
 import StatBadge from '../components/common/StatBadge.vue'
 import { useDeveloperStore } from '../stores/developerStore'
+import { usePlanStore } from '../stores/planStore'
 import type { Developer, DeveloperCategory, DeveloperState, Dilution } from '../types/developer'
-import { calculateStockVolume, remainingRolls } from '../utils/ratio'
+import type { ReservationLease } from '../types/plan'
+import { calculateStockVolume } from '../utils/ratio'
+import { availableDeveloperRolls, reservedRolls as reservedRollsCount } from '../utils/db'
+import { onDbChange } from '../utils/dbSync'
 
 interface DeveloperForm {
   name: string
@@ -19,6 +23,7 @@ interface DeveloperForm {
 }
 
 const developerStore = useDeveloperStore()
+const planStore = usePlanStore()
 const showForm = ref(false)
 const saving = ref(false)
 const form = reactive<DeveloperForm>({
@@ -70,8 +75,19 @@ async function scrapDeveloper(id?: number): Promise<void> {
   ElMessage.success('该工作液已标记为报废')
 }
 
+function reservedPlanNos(leases: ReservationLease[] | undefined): string {
+  const ids = new Set((leases ?? []).map((lease) => lease.planId))
+  return [...ids]
+    .map((id) => planStore.plans.find((plan) => plan.id === id)?.planNo)
+    .filter((name): name is string => Boolean(name))
+    .join('、')
+}
+
 onMounted(() => {
   void developerStore.load()
+  void planStore.load()
+  onDbChange('developer', () => { void developerStore.load() })
+  onDbChange('plan', () => { void planStore.load() })
 })
 </script>
 
@@ -90,7 +106,8 @@ onMounted(() => {
 
     <div class="stat-strip">
       <StatBadge label="工作液总数" :value="developerStore.developers.length" hint="含新配与报废记录" tone="cyan" />
-      <StatBadge label="可用余量" :value="developerStore.availableRolls" hint="按剩余可冲卷数合计" tone="amber" />
+      <StatBadge label="可冲余量" :value="developerStore.availableRolls" hint="已扣除待确认排片占用" tone="amber" />
+      <StatBadge label="排片已占用" :value="developerStore.reservedRolls" hint="确认实冲前的预留卷数" tone="amber" />
       <StatBadge label="已报废" :value="developerStore.developers.filter((item) => item.state === '报废').length" hint="不再计入可用余量" tone="rose" />
     </div>
 
@@ -187,13 +204,13 @@ onMounted(() => {
           </dl>
           <div class="life-meter">
             <div class="life-meter__head">
-              <span>剩余 {{ remainingRolls(developer.maxRolls, developer.usedRolls) }} 卷</span>
+              <span>可冲 {{ availableDeveloperRolls(developer) }} 卷<span v-if="reservedRollsCount(developer.reservations) > 0">（占用 {{ reservedRollsCount(developer.reservations) }}：{{ reservedPlanNos(developer.reservations) }}）</span></span>
               <span>已用 {{ developer.usedRolls }} / {{ developer.maxRolls }}</span>
             </div>
             <div class="life-meter__track">
               <i :style="{ width: `${Math.min(100, developer.usedRolls / developer.maxRolls * 100)}%` }"></i>
             </div>
-            <small v-if="remainingRolls(developer.maxRolls, developer.usedRolls) === 0">余量已耗尽，建议报废并重新配制。</small>
+            <small v-if="availableDeveloperRolls(developer) === 0">可冲余量已耗尽或全部被排片占用，建议报废并重新配制。</small>
           </div>
         </div>
       </article>

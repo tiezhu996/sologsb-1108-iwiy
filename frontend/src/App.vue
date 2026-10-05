@@ -5,19 +5,23 @@ import { useDeveloperStore } from './stores/developerStore'
 import { useFilmStore } from './stores/filmStore'
 import { useRecipeStore } from './stores/recipeStore'
 import { useRunStore } from './stores/runStore'
+import { usePlanStore } from './stores/planStore'
 import { downloadJson } from './utils/export'
+import { onDbChange } from './utils/dbSync'
 
 const route = useRoute()
 const filmStore = useFilmStore()
 const developerStore = useDeveloperStore()
 const recipeStore = useRecipeStore()
 const runStore = useRunStore()
+const planStore = usePlanStore()
 
 const navItems = [
   { path: '/', label: '参数速查' },
   { path: '/films', label: '胶片台账' },
   { path: '/developers', label: '显影液' },
   { path: '/recipes', label: '配方表' },
+  { path: '/plans', label: '待冲排片' },
   { path: '/runs', label: '冲洗记录' }
 ]
 
@@ -28,28 +32,38 @@ function isActive(path: string): boolean {
 function exportAll(): void {
   downloadJson(`gbfilmdev-backup-${new Date().toISOString().slice(0, 10)}.json`, {
     exportedAt: new Date().toISOString(),
-    schemaRev: 2,
+    schemaRev: 3,
     films: filmStore.films,
     developers: developerStore.developers,
     recipes: recipeStore.recipes,
-    runs: runStore.runs
+    runs: runStore.runs,
+    plans: planStore.plans
   })
 }
 
-onMounted(async () => {
+async function reloadAll(): Promise<void> {
   await Promise.all([
     filmStore.load(),
     developerStore.load(),
     recipeStore.load(),
-    runStore.load()
+    runStore.load(),
+    planStore.load()
   ])
+}
+
+onMounted(() => {
+  void reloadAll()
+  onDbChange('plan', () => { void reloadAll() })
+  onDbChange('film', () => { void filmStore.load() })
+  onDbChange('developer', () => { void developerStore.load() })
+  onDbChange('run', () => { void runStore.load() })
 })
 </script>
 
 <template>
   <div class="app-frame">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="返回参数速查台">
+      <router-link class="brand" to="/" aria-label="返回参数速查台">
         <span class="brand__mark" aria-hidden="true">
           <svg viewBox="0 0 48 48" role="img">
             <rect x="8" y="9" width="32" height="30" rx="4" />
@@ -61,14 +75,14 @@ onMounted(async () => {
           <strong>胶片冲洗参数库</strong>
           <small>GB FILM DEV</small>
         </span>
-      </a>
+      </router-link>
       <nav aria-label="主导航">
-        <a
+        <router-link
           v-for="item in navItems"
           :key="item.path"
-          :href="item.path"
+          :to="item.path"
           :class="{ active: isActive(item.path) }"
-        >{{ item.label }}</a>
+        >{{ item.label }}</router-link>
       </nav>
       <button type="button" class="export-button" @click="exportAll">
         <svg viewBox="0 0 24 24" aria-hidden="true">

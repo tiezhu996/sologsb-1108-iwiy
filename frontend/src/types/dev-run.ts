@@ -9,5 +9,8 @@ export interface DevRun {
   tankType: TankType
   runDate: string
   result: string
+  /** 来源排片计划与卷次，保证确认重试不会重复生成正式记录 */
+  planId?: number
+  itemKey?: string
   schemaRev?: number
 }

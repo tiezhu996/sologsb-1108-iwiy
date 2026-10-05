@@ -5,7 +5,11 @@ import { useRoute } from 'vue-router'
 import EmptyPanel from '../components/common/EmptyPanel.vue'
 import FilterBar from '../components/common/FilterBar.vue'
 import { useFilmStore } from '../stores/filmStore'
-import type { FilmFormat, FilmModel } from '../types/film-stock'
+import { onDbChange } from '../utils/dbSync'
+import { availableRollsFor, reservedRolls } from '../utils/db'
+import { usePlanStore } from '../stores/planStore'
+import type { FilmFormat, FilmModel, FilmStock } from '../types/film-stock'
+import type { ReservationLease } from '../types/plan'
 
 interface FilterValue {
   keyword: string
@@ -24,6 +28,7 @@ interface FilmForm {
 
 const route = useRoute()
 const filmStore = useFilmStore()
+const planStore = usePlanStore()
 const showForm = ref(false)
 const saving = ref(false)
 
@@ -87,9 +92,21 @@ function expiryState(expireDate: string): { label: string; className: string } {
   return { label: '有效', className: 'status--ok' }
 }
 
-function stockStatus(film: { rollsLeft: number; expireDate: string }): { label: string; className: string } {
-  if (film.rollsLeft === 0) return { label: '缺货', className: 'status--danger' }
+function stockStatus(film: FilmStock): { label: string; className: string } {
+  if (availableRollsFor(film) === 0) return { label: '缺货', className: 'status--danger' }
   return expiryState(film.expireDate)
+}
+
+function reservedPlanNos(leases: ReservationLease[] | undefined): string {
+  const ids = new Set((leases ?? []).map((lease) => lease.planId))
+  return [...ids]
+    .map((id) => planStore.plans.find((plan) => plan.id === id)?.planNo)
+    .filter((name): name is string => Boolean(name))
+    .join('、')
+}
+
+function reserved(leases: ReservationLease[] | undefined): number {
+  return reservedRolls(leases)
 }
 
 async function submitFilm(): Promise<void> {
@@ -117,6 +134,9 @@ async function submitFilm(): Promise<void> {
 
 onMounted(() => {
   void filmStore.load()
+  void planStore.load()
+  onDbChange('film', () => { void filmStore.load() })
+  onDbChange('plan', () => { void planStore.load() })
 })
 </script>
 
@@ -134,7 +154,9 @@ onMounted(() => {
     </header>
 
     <div class="stat-strip">
-      <div class="simple-stat"><span>总余量</span><strong>{{ filmStore.totalRolls }}</strong><small>卷</small></div>
+      <div class="simple-stat"><span>账面总余量</span><strong>{{ filmStore.totalRolls }}</strong><small>卷</small></div>
+      <div class="simple-stat"><span>排片已占用</span><strong data-testid="count-reserved-film">{{ filmStore.totalReservedRolls }}</strong><small>卷</small></div>
+      <div class="simple-stat"><span>实际可排</span><strong>{{ filmStore.totalAvailableRolls }}</strong><small>卷</small></div>
       <div class="simple-stat"><span>低余量批次</span><strong>{{ filmStore.lowStockCount }}</strong><small>条</small></div>
       <div class="simple-stat"><span>筛选结果</span><strong data-testid="count-film">{{ filteredFilms.length }}</strong><small>条</small></div>
     </div>
@@ -216,7 +238,15 @@ onMounted(() => {
             <div><dt>乳剂批号</dt><dd>{{ film.emulsionNo }}</dd></div>
             <div><dt>标称 / 实拍</dt><dd>ISO {{ film.boxIso }} / {{ film.realIso }}</dd></div>
             <div><dt>有效期</dt><dd>{{ film.expireDate }}</dd></div>
-            <div><dt>余量</dt><dd :class="{ 'text-danger': film.rollsLeft <= 2 }">{{ film.rollsLeft }} 卷</dd></div>
+            <div>
+              <dt>余量</dt>
+              <dd :class="{ 'text-danger': availableRollsFor(film) <= 2 }">
+                可排 {{ availableRollsFor(film) }} 卷
+                <small v-if="reserved(film.reservations) > 0">
+                  （账面 {{ film.rollsLeft }}，待确认占用 {{ reserved(film.reservations) }}：{{ reservedPlanNos(film.reservations) }}）
+                </small>
+              </dd>
+            </div>
           </dl>
         </div>
       </article>
