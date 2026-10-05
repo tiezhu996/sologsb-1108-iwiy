@@ -34,7 +34,8 @@ function developerName(id: number): string {
   return developerStore.developers.find((developer) => developer.id === id)?.name ?? '未知显影液'
 }
 
-function recipeName(id: number): string {
+function recipeName(id?: number): string {
+  if (id === undefined) return '手工记录（无配方）'
   const recipe = recipeStore.recipes.find((item) => item.id === id)
   if (!recipe) return '未知配方'
   return `${filmName(recipe.filmId)} · ${developerName(recipe.developerId)}`

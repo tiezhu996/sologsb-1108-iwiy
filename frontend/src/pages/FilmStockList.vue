@@ -217,6 +217,7 @@ onMounted(() => {
             <div><dt>标称 / 实拍</dt><dd>ISO {{ film.boxIso }} / {{ film.realIso }}</dd></div>
             <div><dt>有效期</dt><dd>{{ film.expireDate }}</dd></div>
             <div><dt>余量</dt><dd :class="{ 'text-danger': film.rollsLeft <= 2 }">{{ film.rollsLeft }} 卷</dd></div>
+            <div v-if="(film.reservedRolls ?? 0) > 0"><dt>待冲占用</dt><dd class="text-warning">{{ film.reservedRolls }} 卷</dd></div>
           </dl>
         </div>
       </article>

@@ -6,7 +6,6 @@ import StatBadge from '../components/common/StatBadge.vue'
 import { useDeveloperStore } from '../stores/developerStore'
 import type { Developer, DeveloperCategory, DeveloperState, Dilution } from '../types/developer'
 import { calculateStockVolume, remainingRolls } from '../utils/ratio'
-
 interface DeveloperForm {
   name: string
   category: DeveloperCategory
@@ -36,6 +35,14 @@ function stateTone(developer: Developer): 'cyan' | 'amber' | 'rose' {
   if (developer.state === '报废') return 'rose'
   if (developer.state === '新配') return 'cyan'
   return 'amber'
+}
+
+function committedRolls(developer: Developer): number {
+  return (developer.baselineUsedRolls ?? 0) + developer.usedRolls
+}
+
+function freeRolls(developer: Developer): number {
+  return remainingRolls(developer.maxRolls, committedRolls(developer) + (developer.reservedRolls ?? 0))
 }
 
 async function submitDeveloper(): Promise<void> {
@@ -187,13 +194,14 @@ onMounted(() => {
           </dl>
           <div class="life-meter">
             <div class="life-meter__head">
-              <span>剩余 {{ remainingRolls(developer.maxRolls, developer.usedRolls) }} 卷</span>
-              <span>已用 {{ developer.usedRolls }} / {{ developer.maxRolls }}</span>
+              <span>剩余 {{ freeRolls(developer) }} 卷</span>
+              <span>已冲 {{ committedRolls(developer) }} / 占用 {{ developer.reservedRolls ?? 0 }} / {{ developer.maxRolls }}</span>
             </div>
             <div class="life-meter__track">
-              <i :style="{ width: `${Math.min(100, developer.usedRolls / developer.maxRolls * 100)}%` }"></i>
+              <i :style="{ width: `${Math.min(100, (committedRolls(developer) + (developer.reservedRolls ?? 0)) / developer.maxRolls * 100)}%` }"></i>
             </div>
-            <small v-if="remainingRolls(developer.maxRolls, developer.usedRolls) === 0">余量已耗尽，建议报废并重新配制。</small>
+            <small v-if="(developer.reservedRolls ?? 0) > 0">有 {{ developer.reservedRolls }} 卷被待冲批次占用，确认实冲后转为已冲。</small>
+            <small v-else-if="freeRolls(developer) === 0">余量已耗尽，建议报废并重新配制。</small>
           </div>
         </div>
       </article>

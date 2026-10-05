@@ -19,7 +19,7 @@ interface FilterValue {
 
 interface RunForm {
   batchNo: string
-  recipeId: number
+  recipeId?: number
   actualTempC: number
   actualMinutes: number
   tankType: TankType
@@ -51,7 +51,6 @@ const filterValue = ref<FilterValue>({
 
 const form = reactive<RunForm>({
   batchNo: `R-${today.replace(/-/g, '')}-01`,
-  recipeId: 1,
   actualTempC: 20,
   actualMinutes: 8,
   tankType: '双联罐',
@@ -72,7 +71,7 @@ watch(selectedRecipe, (recipe) => {
   if (!recipe) return
   form.actualTempC = recipe.tempC
   form.actualMinutes = recipe.devMinutes
-}, { immediate: true })
+})
 
 const filteredRuns = computed(() => {
   const keyword = filterValue.value.keyword.trim().toLowerCase()
@@ -89,7 +88,8 @@ const filteredRuns = computed(() => {
   })
 })
 
-function recipeLabel(id: number): string {
+function recipeLabel(id?: number): string {
+  if (id === undefined) return '手工记录（无配方）'
   const recipe = recipeStore.recipes.find((item) => item.id === id)
   if (!recipe) return '未知配方'
   const film = filmStore.films.find((item) => item.id === recipe.filmId)
@@ -97,7 +97,8 @@ function recipeLabel(id: number): string {
   return `${film?.model ?? '未知胶片'} · ${developer?.name ?? '未知显影液'} · ${recipe.tempC}°C`
 }
 
-function recipeForRun(id: number) {
+function recipeForRun(id?: number) {
+  if (id === undefined) return undefined
   return recipeStore.recipes.find((item) => item.id === id)
 }
 
@@ -107,19 +108,19 @@ function applySuggestion(): void {
 }
 
 async function submitRun(): Promise<void> {
-  if (!form.batchNo.trim() || !form.recipeId || !form.result.trim()) {
-    ElMessage.warning('请填写批次号、配方与结果评价')
+  if (!form.batchNo.trim() || !form.result.trim()) {
+    ElMessage.warning('请填写批次号与结果评价')
     return
   }
   saving.value = true
   const selectedDeveloper = developerStore.developers.find((item) => item.id === selectedRecipe.value?.developerId)
   const willExceedLimit = selectedDeveloper !== undefined
     && selectedDeveloper.state !== '报废'
-    && selectedDeveloper.usedRolls + 1 > selectedDeveloper.maxRolls
+    && (selectedDeveloper.baselineUsedRolls ?? 0) + selectedDeveloper.usedRolls + 1 > selectedDeveloper.maxRolls
   try {
     await runStore.addRun({
       batchNo: form.batchNo.trim(),
-      recipeId: Number(form.recipeId),
+      recipeId: form.recipeId === undefined ? undefined : Number(form.recipeId),
       actualTempC: Number(form.actualTempC),
       actualMinutes: Number(form.actualMinutes),
       tankType: form.tankType,
@@ -149,9 +150,8 @@ async function writeBack(recipeId?: number, runId?: number): Promise<void> {
 
 onMounted(async () => {
   await Promise.all([filmStore.load(), developerStore.load(), recipeStore.load(), runStore.load()])
-  if (recipeStore.recipes[0]?.id !== undefined) {
-    form.recipeId = recipeStore.recipes[0].id
-  }
+  form.actualTempC = recipeStore.recipes[0]?.tempC ?? 20
+  form.actualMinutes = recipeStore.recipes[0]?.devMinutes ?? 8
 })
 </script>
 
@@ -182,8 +182,9 @@ onMounted(async () => {
           <input v-model="form.batchNo" data-testid="field-batchNo" type="text" />
         </label>
         <label class="span-2">
-          <span>冲洗配方</span>
+          <span>冲洗配方（可选手工记录）</span>
           <select v-model.number="form.recipeId" data-testid="field-recipeId">
+            <option :value="undefined">不关联配方</option>
             <option v-for="recipe in recipeStore.recipes" :key="recipe.id" :value="recipe.id">
               {{ recipeLabel(recipe.id ?? 0) }}
             </option>
